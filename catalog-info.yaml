@@ -2,31 +2,21 @@ apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: api-pontos
-  description: The API Pontos service
+  description: API de pontos, responsável por validar e transformar os dados recebidos pelo frontend e publicar no sistema de messageria.
   tags:
     - node
     - express
-spec:
-  type: service
-  owner: Grupo 2
-  lifecycle: production
-  providesApis:
-    - pontos-api
-  links:
-    - url: 'https://github.com/Inteli-College/2024-2B-T06-api-pontos'
-      title: 'Source Code'
-
----
-
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: pontos-api
-  description: The API for Pontos service
+    - publisher
+  annotations:
+    backstage.io/owner: Grupo 3
+    mycompany.io/contracts: |
+      - description: "Connection to motor-loyalty via RabbitMQ"
+        queue: "loyalty_queue"
 spec:
   type: openapi
   lifecycle: production
-  owner: Grupo 2
+  providesApis:
+    - pontos-api
   definition:
     $text: |
       {
@@ -40,6 +30,14 @@ spec:
           {
             "url": "http://localhost:8443",
             "description": "Local development server"
+          },
+          {
+            "url": "https://portainer.api-pontos.uat.com",
+            "description": "UAT server"
+          },
+          {
+            "url": "https://portainer.api-pontos.production.com",
+            "description": "Production server"
           }
         ],
         "paths": {
@@ -139,24 +137,233 @@ spec:
           }
         }
       }
+  links:
+    - url: 'https://github.com/Inteli-College/2024-2B-T06-api-pontos'
+      title: 'Source Code'
+  relationships:
+    - type: "uses"
+      target: "rabbitmq"
+
 ---
 
+# Component Definition for Motor-Loyalty
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: motor-loyalty
+  description: The Motor Loyalty service
+  tags:
+    - node
+    - express
+    - consumer
+  annotations:
+    backstage.io/owner: Grupo 3
+    mycompany.io/contracts: |
+      - description: "Connection to api-campanha"
+        variable: "CAMPAIGN_API_URL"
+        endpoint: "listCampaignsByAction"
+spec:
+  type: service
+  lifecycle: production
+  owner: Grupo 2
+  environments:
+    develop:
+      url: http://motor-loyalty-dev.example.com
+      envVariables:
+        MONGODB_URI: "mongodb://mongodb-dev.example.com:27017/loyalty"
+        RABBITMQ_URL: "amqp://rabbitmq-dev.example.com"
+        CAMPAIGN_API_URL: "http://api-campanha-dev.example.com"
+    uat:
+      url: http://motor-loyalty-uat.example.com
+      envVariables:
+        MONGODB_URI: "mongodb://mongodb-uat.example.com:27017/loyalty"
+        RABBITMQ_URL: "amqp://rabbitmq-uat.example.com"
+        CAMPAIGN_API_URL: "http://api-campanha-uat.example.com"
+    production:
+      url: http://motor-loyalty.example.com
+      envVariables:
+        MONGODB_URI: "mongodb://mongodb.example.com:27017/loyalty"
+        RABBITMQ_URL: "amqp://rabbitmq.example.com"
+        CAMPAIGN_API_URL: "https://api-campanha.example.com"
+  relations:
+    consumes:
+      - target: "rabbitmq"
+      - target: "api-extrato"
+      - target: "api-campanha"
+    uses:
+      - target: "mongodb"
+  providesApis:
+    - motor-loyalty-api
+  dependencies:
+    - rabbitmq
+    - mongodb
+    - api-extrato
+    - api-campanha
+
+---
+
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mongodb-database
+  description: MongoDB Database for Motor Loyalty
+  tags:
+    - database
+    - mongodb
+  annotations:
+    backstage.io/owner: Grupo 3
+spec:
+  type: database
+  lifecycle: production
+  owner: Grupo 2
+  environments:
+    develop:
+      url: mongodb://mongodb-dev.example.com:27017
+      envVariables:
+        DATABASE_NAME: "motor_loyalty_dev"
+    uat:
+      url: mongodb://mongodb-uat.example.com:27017
+      envVariables:
+        DATABASE_NAME: "motor_loyalty_uat"
+    production:
+      url: mongodb://mongodb.example.com:27017
+      envVariables:
+        DATABASE_NAME: "motor_loyalty"
+  providesApis: []
+  relations:
+    - type: "used-by"
+      target: "motor-loyalty"
+
+---
+
+# Component Definition for Front-Noticias
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: front-noticias
+  description: Frontend service for Noticias
+  tags:
+    - frontend
+    - react
+    - typescript
+  annotations:
+    backstage.io/owner: Grupo 2
+    mycompany.io/contracts: |
+      - description: "POST to POINTS_API_URL on receive-action"
+        variable: "POINTS_API_URL"
+        route: "/receive-action"
+spec:
+  type: service
+  lifecycle: production
+  owner: Grupo 2
+  environments:
+    develop:
+      url: http://front-noticias-dev.example.com
+      envVariables:
+        POINTS_API_URL: "http://api-pontos-dev.example.com/receive-action"
+    uat:
+      url: http://front-noticias-uat.example.com
+      envVariables:
+        POINTS_API_URL: "http://api-pontos-uat.example.com/receive-action"
+    production:
+      url: http://front-noticias.example.com
+      envVariables:
+        POINTS_API_URL: "https://api-pontos.example.com/receive-action"
+  relations:
+    uses:
+      - target: "api-pontos"
+  providesApis: []
+  owner: Grupo 3
+
+---
+
+# Resource Definition for RabbitMQ
 apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: rabbitmq
-  description: RabbitMQ instance for the communication between loyalty engine and API Points
+  description: RabbitMQ instance for communication between services
+  tags:
+    - message-broker
+    - rabbitmq
+  annotations:
+    backstage.io/owner: Grupo 3
 spec:
   type: queue
-  owner: Grupo 2
+  owner: Grupo 3
+  environments:
+    develop:
+      url: amqp://rabbitmq-dev.example.com
+      envVariables:
+        QUEUE_NAME: "loyalty_queue_dev"
+    uat:
+      url: amqp://rabbitmq-uat.example.com
+      envVariables:
+        QUEUE_NAME: "loyalty_queue_uat"
+    production:
+      url: amqp://rabbitmq.example.com
+      envVariables:
+        QUEUE_NAME: "loyalty_queue"
+  providesApis: []
+  relations:
+    - type: "used-by"
+      target: "api-pontos"
+    - type: "used-by"
+      target: "motor-loyalty"
 
 ---
 
+# Resource Definition for Prometheus
 apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: prometheus
   description: Prometheus monitoring for the API Points
+  tags:
+    - monitoring
+    - prometheus
+  annotations:
+    backstage.io/owner: Grupo 3
 spec:
   type: monitoring
   owner: Grupo 2
+  environments:
+    develop:
+      url: http://prometheus-dev.example.com
+      envVariables: {}
+    uat:
+      url: http://prometheus-uat.example.com
+      envVariables: {}
+    production:
+      url: http://prometheus.example.com
+      envVariables: {}
+  providesApis: []
+  relations:
+    - type: "monitors"
+      target: "api-pontos"
+
+---
+
+
+# API Definition for front-noticias-api
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: front-noticias-api
+  description: Front Noticias API
+  tags:
+    - api
+    - frontend
+  annotations:
+    backstage.io/owner: Grupo 2
+spec:
+  type: openapi
+  lifecycle: production
+  owner: Grupo 2
+  providesApis:
+    - front-noticias-api
+  definition:
+    # Assuming there is an OpenAPI definition for front-noticias-api
+  links:
+    - url: 'https://github.com/Inteli-College/2024-2B-T06-front-noticias'
+      title: 'Source Code'
