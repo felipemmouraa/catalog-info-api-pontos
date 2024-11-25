@@ -162,6 +162,9 @@ metadata:
       - description: "Connection to api-campanha"
         variable: "CAMPAIGN_API_URL"
         endpoint: "listCampaignsByAction"
+  links:
+    - url: 'https://github.com/Inteli-College/2024-2B-T06-motor-loyalty'
+      title: 'Source Code'
 spec:
   type: service
   lifecycle: production
